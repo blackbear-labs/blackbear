@@ -1,0 +1,232 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User model for authentication (Owner & Partner)
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   // "owner" or "partner"
+  partnerId String?  // Link to partner profile if role is "partner"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  partner Partner?
+}
+
+// Partner profile
+model Partner {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  name            String
+  email           String   @unique
+  password        String
+  avatarUrl       String?
+  bankName        String
+  accountNumber   String
+  accountOwner    String
+  city            String
+  tier            String   @default("Bronze") // Bronze, Silver, Gold, Platinum, Diamond
+  badge           String   @default("Newcomer")
+  commissionRate  Float    @default(0.30) // 30% default
+  status          String   @default("Active") // Active, Suspended
+  totalProfit     Float    @default(0)
+  totalVolume     Float    @default(0)
+  totalTransactions Int    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user         User                  @relation(fields: [userId], references: [id])
+  customers    Customer[]
+  transactions Transaction[]
+  monthlyStats PartnerMonthlyStats[]
+  notifications PartnerNotification[]
+}
+
+// Customer model
+model Customer {
+  id            String   @id @default(cuid())
+  name          String
+  whatsapp      String
+  bankName      String?
+  accountNumber String?
+  accountOwner  String?
+  city          String
+  label         String   @default("Regular") // Regular, VIP, Blacklist
+  partnerId     String?  // NULL if from landing page
+  totalProfit   Float    @default(0)
+  totalVolume   Float    @default(0)
+  totalTransactions Int  @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  partner      Partner?      @relation(fields: [partnerId], references: [id])
+  transactions Transaction[]
+}
+
+// Transaction model
+model Transaction {
+  id                  String   @id @default(cuid())
+  customerId          String
+  partnerId           String?  // NULL if from landing page
+  nominal             Float
+  paymentTypeId       String
+  platformId          String?
+  transactionMethodId String  // Online or COD
+  paymentFee          Float
+  codFee              Float
+  platformFee         Float
+  netMargin           Float
+  partnerProfit       Float
+  ownerProfit         Float
+  status              String   @default("Pending") // "Pending", "Verifikasi", "Proses", "Berhasil"
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  customer            Customer             @relation(fields: [customerId], references: [id])
+  partner             Partner?             @relation(fields: [partnerId], references: [id])
+  paymentType         PaymentType          @relation(fields: [paymentTypeId], references: [id])
+  platform            Platform?            @relation(fields: [platformId], references: [id])
+  transactionMethod   TransactionMethod    @relation(fields: [transactionMethodId], references: [id])
+}
+
+// Payment types (CC/Paylater) with fee structure
+model PaymentType {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  type              String   // "CC" or "Paylater"
+  flatFeeThreshold  Float    @default(1000000) // Threshold between flat and percentage
+  flatFee           Float    @default(0)       // Fee for transactions below threshold
+  percentageFee     Float    @default(0)       // Fee percentage for transactions above threshold
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  transactions Transaction[]
+}
+
+// Platforms (marketplace) with margin reduction
+model Platform {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  feeRate     Float    @default(0) // Percentage reduction from margin
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  transactions Transaction[]
+}
+
+// Transaction methods (Online/COD) with additional fees
+model TransactionMethod {
+  id        String   @id @default(cuid())
+  name      String   @unique // "Online" or "COD"
+  feeRate   Float    @default(0) // Additional fee percentage
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions Transaction[]
+}
+
+// Promo model
+model Promo {
+  id          String   @id @default(cuid())
+  title       String
+  link        String
+  isActive    Boolean  @default(false)
+  startDate   DateTime
+  expireDate  DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Broadcast model
+model Broadcast {
+  id          String   @id @default(cuid())
+  type        String   @default("broadcast") // "broadcast" or "promo"
+  title       String
+  description String
+  isActive    Boolean  @default(false)
+  startDate   DateTime
+  expireDate  DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Partner monthly stats for gamification and leaderboard
+model PartnerMonthlyStats {
+  id                String   @id @default(cuid())
+  partnerId         String
+  year              Int
+  month             Int
+  totalProfit       Float    @default(0)
+  totalVolume       Float    @default(0)
+  totalTransactions Int      @default(0)
+  rank              Int?
+  badge             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  partner Partner @relation(fields: [partnerId], references: [id])
+
+  @@unique([partnerId, year, month])
+}
+
+// Partner ranking history
+model PartnerRankingHistory {
+  id          String   @id @default(cuid())
+  partnerId   String
+  year        Int
+  month       Int
+  rank        Int
+  badge       String
+  totalProfit Float
+  createdAt   DateTime @default(now())
+
+  @@unique([partnerId, year, month])
+}
+
+// Partner notification/announcement
+model PartnerNotification {
+  id          String   @id @default(cuid())
+  partnerId   String
+  type        String   @default("pengumuman") // "pengumuman", "promo", "broadcast"
+  title       String
+  description String
+  link        String?
+  isRead      Boolean  @default(false)
+  expireDate  DateTime
+  createdAt   DateTime @default(now())
+
+  partner Partner @relation(fields: [partnerId], references: [id])
+}
+
+// Site configuration
+model SiteConfig {
+  id                  String   @id @default(cuid())
+  siteTitle           String   @default("Gestun Platform")
+  logoUrl             String?
+  faviconUrl          String?
+  metaTitle           String?
+  metaDescription     String?
+  ownerName           String?
+  ownerEmail          String?
+  ownerPassword       String?
+  contactWhatsApp     String?
+  contactInstagram    String?
+  contactFacebook     String?
+  maintenanceMode     Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
