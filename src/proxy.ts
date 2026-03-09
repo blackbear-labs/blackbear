@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
+export async function proxy(request: NextRequest) {
+  return NextResponse.next()
+}
+
 // Paths that are always allowed during maintenance
 const ALWAYS_ALLOWED_PATHS = [
   '/api',
@@ -137,7 +141,7 @@ async function getMaintenanceStatus(): Promise<{ maintenanceMode: boolean }> {
   }
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Skip for static files
