@@ -1,0 +1,327 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== USER & AUTH ====================
+
+model User {
+  id            String      @id @default(cuid())
+  email         String      @unique
+  password      String
+  name          String
+  role          String      @default("PARTNER") // OWNER, PARTNER
+  avatar        String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  partner       Partner?
+  announcements Announcement[]
+  
+  @@map("users")
+}
+
+// ==================== PARTNER ====================
+
+model Partner {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Bank Info
+  bankName        String
+  accountNumber   String
+  accountHolder   String
+  city            String
+  
+  // Contact
+  whatsapp        String
+  
+  // Gamification
+  tier            String    @default("Bronze") // Bronze, Silver, Gold, Platinum, Diamond
+  badge           String?   // Champion, Top Performer, etc.
+  commissionRate  Float     @default(0.30) // 30% default
+  targetAmount    Float     @default(5000000) // 5 million default
+  kpiTarget       Float     @default(5000000) // Monthly KPI target (default 5M)
+  
+  // Status
+  status          String    @default("ACTIVE") // ACTIVE, SUSPENDED
+  
+  // Stats (computed)
+  totalProfit     Float     @default(0)
+  totalVolume     Float     @default(0)
+  totalTransactions Int     @default(0)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  customers       Customer[]
+  transactions    Transaction[]
+  rankingHistory  MonthlyRanking[]
+  kpis            PartnerKPI[]
+  
+  @@map("partners")
+}
+
+// ==================== CUSTOMER ====================
+
+model Customer {
+  id            String      @id @default(cuid())
+  partnerId     String?
+  partner       Partner?    @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  
+  // Customer Info
+  name          String
+  whatsapp      String
+  bank          String?
+  accountNumber String?
+  accountHolder String?
+  city          String?
+  
+  // Label
+  label         String      @default("NEW") // VIP, REGULAR, NEW, BLACKLIST
+  
+  // Stats
+  totalContribution Float   @default(0)
+  totalTransactions Int     @default(0)
+  totalVolume   Float       @default(0)
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  transactions  Transaction[]
+  
+  @@map("customers")
+}
+
+// ==================== TRANSACTION ====================
+
+model Transaction {
+  id              String    @id @default(cuid())
+  orderId         String    @unique
+  
+  // Customer
+  customerId      String
+  customer        Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  // Partner (nullable)
+  partnerId       String?
+  partner         Partner?  @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  
+  // Transaction Details
+  nominal         Float      // Nominal Gestun
+  paymentTypeId   String
+  paymentType     PaymentType @relation(fields: [paymentTypeId], references: [id])
+  
+  marketplaceId   String?
+  marketplace     Marketplace? @relation(fields: [marketplaceId], references: [id], onDelete: SetNull)
+  
+  method          String     // ONLINE, COD
+  
+  // Calculations
+  paymentFee      Float      // Fee from payment type
+  platformFee     Float      @default(0) // Fee from marketplace
+  netMargin       Float      // paymentFee - platformFee
+  partnerProfit   Float      @default(0)
+  ownerProfit     Float      @default(0)
+  totalServiceFee Float      // Total biaya layanan
+  receivedAmount  Float      // Amount received by customer
+  
+  // Status
+  status          String    @default("PENDING") // PENDING, VERIFIED, PROCESSING, COMPLETED, CANCELLED
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@map("transactions")
+}
+
+// ==================== PAYMENT TYPE ====================
+
+model PaymentType {
+  id              String    @id @default(cuid())
+  name            String    // e.g., "Kartu Kredit", "Paylater Shopee", "Paylater GoPay"
+  type            String    // CC, PAYLATER
+  
+  // Fee Configuration
+  threshold       Float     @default(1000000) // 1 million
+  onlineFeePercent Float   @default(0.10) // 10%
+  onlineFeeFixed  Float     @default(100000) // 100k
+  codFeePercent   Float     @default(0.15) // 15%
+  codFeeFixed     Float     @default(150000) // 150k
+  
+  status          String    @default("ACTIVE") // ACTIVE, INACTIVE
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  transactions    Transaction[]
+  
+  @@map("payment_types")
+}
+
+// ==================== MARKETPLACE ====================
+
+model Marketplace {
+  id              String    @id @default(cuid())
+  name            String    // e.g., "Shopee", "Tokopedia", "Lazada", "Bukalapak"
+  feePercent      Float     @default(0) // Fee percentage that reduces margin
+  logo            String?
+  status          String    @default("ACTIVE") // ACTIVE, INACTIVE
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  transactions    Transaction[]
+  
+  @@map("marketplaces")
+}
+
+// ==================== BROADCAST / ANNOUNCEMENT ====================
+
+model Announcement {
+  id              String    @id @default(cuid())
+  createdBy       String
+  user            User      @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  
+  title           String
+  description     String
+  type            String    @default("INFO") // INFO, PROMO
+  
+  // For Promo type
+  link            String?   // Canva/GDrive link
+  
+  // Status
+  status          String    @default("INACTIVE") // ACTIVE, INACTIVE
+  
+  // Date Range
+  startDate       DateTime
+  endDate         DateTime
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  readStatus      AnnouncementRead[]
+  
+  @@map("announcements")
+}
+
+// ==================== ANNOUNCEMENT READ STATUS ====================
+
+model AnnouncementRead {
+  id              String    @id @default(cuid())
+  announcementId  String
+  announcement    Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  partnerId       String
+  readAt          DateTime  @default(now())
+  
+  @@unique([announcementId, partnerId])
+  @@map("announcement_reads")
+}
+
+// ==================== MONTHLY RANKING ====================
+
+model MonthlyRanking {
+  id              String    @id @default(cuid())
+  partnerId       String
+  partner         Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  
+  // Period
+  year            Int
+  month           Int
+  
+  // Stats for that month
+  profit          Float
+  volume          Float
+  transactions    Int
+  rank            Int
+  badge           String?
+  
+  createdAt       DateTime  @default(now())
+  
+  @@unique([partnerId, year, month])
+  @@map("monthly_rankings")
+}
+
+// ==================== PARTNER KPI ====================
+
+model PartnerKPI {
+  id              String   @id @default(cuid())
+  partnerId       String
+  partner         Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  
+  // Monthly KPIs
+  year            Int
+  month           Int
+  
+  // Metrics
+  totalProfit     Float    @default(0)
+  totalVolume     Float    @default(0)
+  totalTrans      Int      @default(0)
+  newCustomers    Int      @default(0)
+  avgTransaction  Float    @default(0)
+  
+  // Targets
+  targetProgress  Float    @default(0)  // percentage
+  targetAchieved  Boolean  @default(false)
+  
+  createdAt       DateTime @default(now())
+  
+  @@unique([partnerId, year, month])
+  @@map("partner_kpis")
+}
+
+// ==================== SITE CONFIG ====================
+
+model SiteConfig {
+  id              String    @id @default(cuid())
+  
+  // Profile
+  ownerName       String    @default("Black Bear Admin")
+  ownerEmail      String    @default("admin@blackbear.com")
+  ownerAvatar     String?
+  
+  // Brand Identity
+  brandName       String    @default("Black Bear")
+  logoUrl         String?
+  faviconUrl      String?
+  
+  // SEO
+  siteTitle       String    @default("Black Bear - Gestun Service")
+  metaDescription String?
+  metaKeywords    String?
+  
+  // Contact
+  contactPhone    String?
+  contactWhatsapp String?
+  contactEmail    String?
+  socialInstagram String?
+  socialFacebook  String?
+  socialTiktok    String?
+  
+  // Maintenance
+  maintenanceMode Boolean   @default(false)
+  maintenanceMessage String?
+  
+  updatedAt       DateTime  @updatedAt
+  
+  @@map("site_config")
+}
+
+// ==================== APP STATE ====================
+
+model AppState {
+  id              String    @id @default(cuid())
+  key             String    @unique
+  value           String
+  updatedAt       DateTime  @updatedAt
+  
+  @@map("app_state")
+}
